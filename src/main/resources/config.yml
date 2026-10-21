@@ -1,0 +1,18 @@
+# SHQueueCommands Configuration
+
+# Délai en ticks serveur avant d'exécuter les commandes mises en file d'attente
+# lorsqu'un joueur se connecte. 20 ticks = 1 seconde.
+# Mettre à 0 pour une exécution instantanée (non recommandé si d'autres plugins
+# modifient les données du joueur à la connexion).
+execution-delay-ticks: 100 # 2 secondes par défaut
+
+# Messages du plugin (supporte les codes couleurs avec '&')
+messages:
+  prefix: "&8[&6SHQC&8] &r"
+  command-queued: "&7La commande pour &e%player% &7a été mise en file d'attente : &f/%command%"
+  command-executed-immediately: "&7La commande pour &e%player% &7a été exécutée directement : &f/%command%"
+  player-not-found: "&cLe joueur &e%player% &cn'a pas été trouvé ou ne s'est jamais connecté."
+  no-permission: "&cVous n'avez pas la permission d'utiliser cette commande."
+  invalid-usage: "&cUsage incorrect. Utilisez : /qc queue <Joueur> <Commande>"
+  # commands-executed-on-join: "&7%count% commande(s) en attente ont été exécutées pour vous."
+  commands-executed-on-join: ""
