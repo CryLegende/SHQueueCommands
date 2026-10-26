@@ -12,8 +12,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class SHQueueCommands extends JavaPlugin {
@@ -21,7 +25,12 @@ public class SHQueueCommands extends JavaPlugin {
     private final Map<UUID, List<String>> queuedCommands = new ConcurrentHashMap<>();
     private File queuedCommandsFile;
     private FileConfiguration queuedCommandsConfig;
-    private String prefix; // Stocke le préfixe une fois chargé
+    private String prefix = ""; // Stocke le préfixe une fois chargé
+
+    // Sauvegardes : chaque instantané est numéroté pour qu'une écriture asynchrone plus ancienne n'écrase jamais une plus récente
+    private final Object saveLock = new Object();
+    private final AtomicLong saveCounter = new AtomicLong();
+    private long lastWrittenVersion = 0L;
 
     @Override
     public void onEnable() {
@@ -96,6 +105,15 @@ public class SHQueueCommands extends JavaPlugin {
     }
 
 
+    /**
+     * Envoie un message ; un message vide dans la config est désactivé (pas de ligne blanche dans le chat).
+     */
+    public void sendMessage(CommandSender target, String message) {
+        if (message != null && !message.isEmpty()) {
+            target.sendMessage(message);
+        }
+    }
+
     public long getExecutionDelayTicks() {
         return getConfig().getLong("execution-delay-ticks", 40L);
     }
@@ -148,23 +166,46 @@ public class SHQueueCommands extends JavaPlugin {
     }
 
     public void saveQueuedCommandsToFile() {
-        // Créer une nouvelle instance de configuration pour éviter de modifier l'ancienne
+        // Instantané construit sur le thread appelant (cohérent avec la file en mémoire)
         FileConfiguration newConfig = new YamlConfiguration();
         ConfigurationSection commandsSection = newConfig.createSection("commands");
 
         for (Map.Entry<UUID, List<String>> entry : queuedCommands.entrySet()) {
             if (entry.getValue() != null && !entry.getValue().isEmpty()) {
-                commandsSection.set(entry.getKey().toString(), entry.getValue());
+                commandsSection.set(entry.getKey().toString(), new ArrayList<>(entry.getValue()));
             }
         }
 
-        try {
-            newConfig.save(queuedCommandsFile); // Sauvegarder la nouvelle configuration
-            // Mettre à jour la config en mémoire si nécessaire, ou simplement la recharger
-            // queuedCommandsConfig = newConfig; // Optionnel, dépend si on la réutilise directement
-            getLogger().info("Commandes en attente sauvegardées dans queued_commands.yml");
-        } catch (IOException e) {
-            getLogger().severe("Impossible de sauvegarder les commandes en attente: " + e.getMessage());
+        final String data = newConfig.saveToString();
+        final long version = saveCounter.incrementAndGet();
+
+        // Écriture hors du thread principal ; à l'arrêt du plugin le scheduler n'accepte plus de tâche, on écrit directement
+        if (isEnabled()) {
+            getServer().getScheduler().runTaskAsynchronously(this, () -> writeQueuedCommands(data, version));
+        } else {
+            writeQueuedCommands(data, version);
+        }
+    }
+
+    private void writeQueuedCommands(String data, long version) {
+        synchronized (saveLock) {
+            if (version < lastWrittenVersion) {
+                return; // Un instantané plus récent est déjà sur le disque
+            }
+            try {
+                // Écriture dans un fichier temporaire puis remplacement : un crash en cours d'écriture ne tronque pas la file
+                File tmp = new File(queuedCommandsFile.getParentFile(), queuedCommandsFile.getName() + ".tmp");
+                Files.writeString(tmp.toPath(), data, StandardCharsets.UTF_8);
+                try {
+                    Files.move(tmp.toPath(), queuedCommandsFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                    Files.move(tmp.toPath(), queuedCommandsFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+                lastWrittenVersion = version;
+                getLogger().info("Commandes en attente sauvegardées dans queued_commands.yml");
+            } catch (IOException e) {
+                getLogger().severe("Impossible de sauvegarder les commandes en attente: " + e.getMessage());
+            }
         }
     }
 

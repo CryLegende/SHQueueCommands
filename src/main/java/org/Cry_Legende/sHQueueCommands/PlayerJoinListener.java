@@ -5,7 +5,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,30 +19,39 @@ public class PlayerJoinListener implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-        UUID playerUUID = player.getUniqueId();
+        UUID playerUUID = event.getPlayer().getUniqueId();
 
-        List<String> commandsToExecute = plugin.getAndClearCommands(playerUUID); // Récupère et supprime
-
-        if (commandsToExecute != null && !commandsToExecute.isEmpty()) {
-            long delay = plugin.getExecutionDelayTicks();
-            final int commandCount = commandsToExecute.size(); // Pour le message
-
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    int executedCount = 0;
-                    for (String cmd : commandsToExecute) {
-                        plugin.executeCommandAsConsole(cmd, player);
-                        executedCount++;
-                    }
-                    if (executedCount > 0) {
-                        player.sendMessage(plugin.getMessage("commands-executed-on-join", "%count%", String.valueOf(executedCount)));
-                        // Sauvegarder après l'exécution pour s'assurer que les commandes effacées le sont aussi sur disque
-                        plugin.saveQueuedCommandsToFile();
-                    }
-                }
-            }.runTaskLater(plugin, delay);
+        // Les commandes restent dans la file jusqu'à leur exécution : si le joueur repart pendant le délai
+        // ou si le serveur s'arrête, elles sont conservées dans queued_commands.yml au lieu d'être perdues.
+        List<String> pending = plugin.getQueuedCommandsMap().get(playerUUID);
+        if (pending == null || pending.isEmpty()) {
+            return;
         }
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Player player = Bukkit.getPlayer(playerUUID);
+            if (player == null || !player.isOnline()) {
+                return; // Reparti : la file est gardée pour sa prochaine connexion
+            }
+
+            List<String> commandsToExecute = plugin.getAndClearCommands(playerUUID); // Récupère et supprime
+            if (commandsToExecute == null || commandsToExecute.isEmpty()) {
+                return; // Déjà traitées par une connexion précédente
+            }
+
+            int executedCount = 0;
+            for (String cmd : commandsToExecute) {
+                try {
+                    plugin.executeCommandAsConsole(cmd, player);
+                } catch (RuntimeException e) {
+                    // Une commande en erreur ne doit pas faire perdre les suivantes
+                    plugin.getLogger().warning("Commande en file en erreur pour " + player.getName() + " (" + cmd + ") : " + e.getMessage());
+                }
+                executedCount++;
+            }
+            plugin.sendMessage(player, plugin.getMessage("commands-executed-on-join", "%count%", String.valueOf(executedCount)));
+            // Sauvegarder après l'exécution pour s'assurer que les commandes effacées le sont aussi sur disque
+            plugin.saveQueuedCommandsToFile();
+        }, plugin.getExecutionDelayTicks());
     }
 }

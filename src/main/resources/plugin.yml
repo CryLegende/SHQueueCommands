@@ -15,4 +15,5 @@ commands:
 permissions:
   shqueuecommands.execute:
     description: Permet d'utiliser la commande pour mettre en file d'attente les commandes.
-    default: true
+    # op : la commande s'exécute en console, un joueur ne doit jamais l'avoir par défaut
+    default: op
