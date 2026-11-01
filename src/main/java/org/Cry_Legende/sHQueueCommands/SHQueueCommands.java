@@ -8,6 +8,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -22,7 +23,14 @@ import java.util.stream.Collectors;
 
 public class SHQueueCommands extends JavaPlugin {
 
+    // Tentatives de mise à jour AzLink avant de garder une commande azlink money pour la prochaine connexion
+    private static final int AZLINK_MAX_ATTEMPTS = 3;
+    // 6 s entre deux tentatives : AzLink ignore un fetch lancé moins de 5 s après le précédent
+    private static final long AZLINK_RETRY_TICKS = 120L;
+
     private final Map<UUID, List<String>> queuedCommands = new ConcurrentHashMap<>();
+    private final Set<UUID> waitingForAzLink = ConcurrentHashMap.newKeySet();
+    private AzLinkSync azLink;
     private File queuedCommandsFile;
     private FileConfiguration queuedCommandsConfig;
     private String prefix = ""; // Stocke le préfixe une fois chargé
@@ -39,6 +47,7 @@ public class SHQueueCommands extends JavaPlugin {
 
         setupQueuedCommandsFile();
         loadQueuedCommandsFromFile();
+        azLink = new AzLinkSync(this);
 
         QueueCommandExecutor commandExecutor = new QueueCommandExecutor(this);
         getCommand("queuecommand").setExecutor(commandExecutor);
@@ -218,7 +227,95 @@ public class SHQueueCommands extends JavaPlugin {
         return Bukkit.getOfflinePlayer(playerName);
     }
 
-    public void executeCommandAsConsole(String command, Player playerContext) {
+    public boolean isWaitingForAzLink(UUID playerUUID) {
+        return waitingForAzLink.contains(playerUUID);
+    }
+
+    /**
+     * Exécute dans l'ordre les commandes d'un joueur connecté. Sur un {@code azlink money} dont AzLink ne connaît pas
+     * encore le joueur, la suite est remise en tête de file (sauvegardée), AzLink interroge le site, puis la file reprend.
+     */
+    public void runCommands(Player player, List<String> commands, boolean fromQueue) {
+        runCommands(player, commands, fromQueue, 0);
+    }
+
+    // fromQueue : les commandes viennent d'être retirées de la file, il faut réécrire le fichier
+    private void runCommands(Player player, List<String> commands, boolean fromQueue, int attempt) {
+        UUID uuid = player.getUniqueId();
+        List<String> held = new ArrayList<>();
+        for (int i = 0; i < commands.size(); i++) {
+            String command = commands.get(i);
+            String target = AzLinkSync.moneyTarget(resolve(command, player));
+            if (target != null && !azLink.knows(target)) {
+                if (attempt < AZLINK_MAX_ATTEMPTS) {
+                    prependToQueue(uuid, commands.subList(i, commands.size()));
+                    waitingForAzLink.add(uuid);
+                    saveQueuedCommandsToFile();
+                    getLogger().info("AzLink ne connaît pas encore " + target + " : mise à jour depuis le site avant /" + resolve(command, player));
+                    askAzLink(uuid, attempt);
+                    return;
+                }
+                held.add(command);
+                getLogger().warning("AzLink ne connaît toujours pas " + target + " : /" + resolve(command, player) + " gardée pour sa prochaine connexion.");
+                continue;
+            }
+            try {
+                executeCommandAsConsole(command, player);
+            } catch (RuntimeException e) {
+                // Une commande en erreur ne doit pas faire perdre les suivantes
+                getLogger().warning("Commande en file en erreur pour " + player.getName() + " (" + command + ") : " + e.getMessage());
+            }
+        }
+        if (!held.isEmpty()) {
+            prependToQueue(uuid, held);
+        }
+        if (fromQueue || !held.isEmpty()) {
+            saveQueuedCommandsToFile();
+        }
+    }
+
+    private void askAzLink(UUID uuid, int attempt) {
+        Runnable ask = () -> azLink.fetch().whenComplete((ignored, error) -> resumeAfterAzLink(uuid, attempt + 1));
+        if (attempt == 0) {
+            ask.run();
+        } else {
+            Bukkit.getScheduler().runTaskLater(this, ask, AZLINK_RETRY_TICKS);
+        }
+    }
+
+    // Appelé depuis le thread d'AzLink : la reprise se fait sur le thread principal
+    private void resumeAfterAzLink(UUID uuid, int attempt) {
+        if (!isEnabled()) {
+            return; // Arrêt en cours : les commandes sont déjà dans la file sauvegardée
+        }
+        try {
+            Bukkit.getScheduler().runTask(this, () -> {
+                waitingForAzLink.remove(uuid);
+                Player player = Bukkit.getPlayer(uuid);
+                if (player == null || !player.isOnline()) {
+                    return; // Reparti : la file est gardée pour sa prochaine connexion
+                }
+                List<String> pending = getAndClearCommands(uuid);
+                if (pending != null && !pending.isEmpty()) {
+                    runCommands(player, pending, true, attempt);
+                }
+            });
+        } catch (IllegalPluginAccessException e) {
+            // Plugin désactivé entre-temps : la file est sauvegardée par onDisable
+        }
+    }
+
+    private void prependToQueue(UUID playerUUID, List<String> commands) {
+        queuedCommands.compute(playerUUID, (k, existing) -> {
+            List<String> merged = new ArrayList<>(commands);
+            if (existing != null) {
+                merged.addAll(existing);
+            }
+            return merged;
+        });
+    }
+
+    private String resolve(String command, Player playerContext) {
         String processedCommand = command;
         if (playerContext != null) {
             processedCommand = processedCommand.replace("%player%", playerContext.getName())
@@ -231,7 +328,11 @@ public class SHQueueCommands extends JavaPlugin {
         if (processedCommand.startsWith("/")) {
             processedCommand = processedCommand.substring(1);
         }
+        return processedCommand;
+    }
 
+    public void executeCommandAsConsole(String command, Player playerContext) {
+        String processedCommand = resolve(command, playerContext);
         getLogger().info("Exécution de la commande (console): " + processedCommand);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), processedCommand);
     }

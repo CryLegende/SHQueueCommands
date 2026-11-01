@@ -28,7 +28,11 @@ Utilisé sur : **Opale**.
 
 | Permission | Description | Par défaut |
 |---|---|---|
-| `shqueuecommands.execute` | Permet d'utiliser la commande pour mettre en file d'attente les commandes. | `true` |
+| `shqueuecommands.execute` | Permet d'utiliser la commande pour mettre en file d'attente les commandes. | `op` |
+
+## AzLink
+
+Une commande `azlink money ...` ne passe que si AzLink a déjà reçu le joueur du site (mise à jour toutes les minutes, vidée à chaque redémarrage). Juste après une connexion, elle échouait avec « Unable to find player » et les tokens étaient perdus. Le plugin demande donc la mise à jour au site et attend sa réponse avant de lancer la commande (3 essais espacés de 6 s). Sans réponse, la commande reste dans la file pour la connexion suivante ; les autres commandes passent quand même.
 
 ## Configuration
 

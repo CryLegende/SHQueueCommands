@@ -62,9 +62,14 @@ public class QueueCommandExecutor implements CommandExecutor, TabCompleter {
 
         Player targetOnlinePlayer = Bukkit.getPlayerExact(playerName);
 
-        if (targetOnlinePlayer != null && targetOnlinePlayer.isOnline()) {
+        if (targetOnlinePlayer != null && targetOnlinePlayer.isOnline() && plugin.isWaitingForAzLink(targetOnlinePlayer.getUniqueId())) {
+            // Sa file attend la réponse du site AzLink : passer derrière pour garder l'ordre des récompenses
+            plugin.addCommandToQueue(targetOnlinePlayer.getUniqueId(), commandToExecute);
+            plugin.saveQueuedCommandsToFile();
+            plugin.sendMessage(sender, plugin.getMessage("command-queued", "%player%", targetOnlinePlayer.getName(), "%command%", commandToExecute));
+        } else if (targetOnlinePlayer != null && targetOnlinePlayer.isOnline()) {
             // Le joueur est en ligne, exécuter la commande directement
-            plugin.executeCommandAsConsole(commandToExecute, targetOnlinePlayer);
+            plugin.runCommands(targetOnlinePlayer, List.of(commandToExecute), false);
             plugin.sendMessage(sender, plugin.getMessage("command-executed-immediately", "%player%", targetOnlinePlayer.getName(), "%command%", commandToExecute));
         } else {
             // Le joueur est hors ligne ou n'existe pas, chercher son UUID
