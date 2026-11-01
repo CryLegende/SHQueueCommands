@@ -39,9 +39,19 @@ public class PlayerJoinListener implements Listener {
                 return; // Déjà traitées par une connexion précédente
             }
 
-            // Exécute et sauvegarde la file ; une commande azlink money peut attendre la réponse du site
-            plugin.runCommands(player, commandsToExecute, true);
-            plugin.sendMessage(player, plugin.getMessage("commands-executed-on-join", "%count%", String.valueOf(commandsToExecute.size())));
+            int executedCount = 0;
+            for (String cmd : commandsToExecute) {
+                try {
+                    plugin.executeCommandAsConsole(cmd, player);
+                } catch (RuntimeException e) {
+                    // Une commande en erreur ne doit pas faire perdre les suivantes
+                    plugin.getLogger().warning("Commande en file en erreur pour " + player.getName() + " (" + cmd + ") : " + e.getMessage());
+                }
+                executedCount++;
+            }
+            plugin.sendMessage(player, plugin.getMessage("commands-executed-on-join", "%count%", String.valueOf(executedCount)));
+            // Sauvegarder après l'exécution pour s'assurer que les commandes effacées le sont aussi sur disque
+            plugin.saveQueuedCommandsToFile();
         }, plugin.getExecutionDelayTicks());
     }
 }
