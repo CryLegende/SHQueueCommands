@@ -17,12 +17,16 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class SHQueueCommands extends JavaPlugin {
 
-    private final Map<UUID, List<String>> queuedCommands = new ConcurrentHashMap<>();
+    // Intervalle entre deux passages de la purge des commandes trop anciennes (1 heure)
+    private static final long PURGE_INTERVAL_TICKS = 20L * 60L * 60L;
+
+    private final Map<UUID, List<QueuedCommand>> queuedCommands = new ConcurrentHashMap<>();
     private File queuedCommandsFile;
     private FileConfiguration queuedCommandsConfig;
     private FileConfiguration messages;
@@ -40,6 +44,10 @@ public class SHQueueCommands extends JavaPlugin {
 
         setupQueuedCommandsFile();
         loadQueuedCommandsFromFile();
+
+        // Purge au démarrage puis toutes les heures : un serveur qui ne redémarre presque jamais doit purger aussi
+        purgeExpiredCommands();
+        getServer().getScheduler().runTaskTimer(this, this::purgeExpiredCommands, PURGE_INTERVAL_TICKS, PURGE_INTERVAL_TICKS);
 
         QueueCommandExecutor commandExecutor = new QueueCommandExecutor(this);
         getCommand("queuecommand").setExecutor(commandExecutor);
@@ -123,17 +131,67 @@ public class SHQueueCommands extends JavaPlugin {
         return getConfig().getLong("execution-delay-ticks", 40L);
     }
 
+    // Durée de conservation d'une commande en file, en jours ; 0 ou moins désactive la purge
+    public long getPurgeAfterDays() {
+        return getConfig().getLong("purge-after-days", 90L);
+    }
+
     public void addCommandToQueue(UUID playerUUID, String command) {
-        queuedCommands.computeIfAbsent(playerUUID, k -> new ArrayList<>()).add(command);
+        queuedCommands.computeIfAbsent(playerUUID, k -> new ArrayList<>()).add(new QueuedCommand(command, System.currentTimeMillis()));
         // saveQueuedCommandsToFile(); // Décommenter pour une sauvegarde plus fréquente et immédiate
     }
 
     public List<String> getAndClearCommands(UUID playerUUID) {
-        return queuedCommands.remove(playerUUID);
+        List<QueuedCommand> removed = queuedCommands.remove(playerUUID);
+        if (removed == null) {
+            return null;
+        }
+        return removed.stream().map(QueuedCommand::command).collect(Collectors.toList());
     }
 
-    public Map<UUID, List<String>> getQueuedCommandsMap() {
+    public Map<UUID, List<QueuedCommand>> getQueuedCommandsMap() {
         return queuedCommands;
+    }
+
+    /**
+     * Supprime de la file les commandes en attente depuis plus de purge-after-days jours.
+     * Les joueurs connectés sont ignorés : leurs commandes sont en cours d'exécution.
+     *
+     * @return Le nombre de commandes supprimées.
+     */
+    public int purgeExpiredCommands() {
+        long days = getPurgeAfterDays();
+        if (days <= 0) {
+            return 0;
+        }
+        long limit = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days);
+        int purgedTotal = 0;
+
+        Iterator<Map.Entry<UUID, List<QueuedCommand>>> players = queuedCommands.entrySet().iterator();
+        while (players.hasNext()) {
+            Map.Entry<UUID, List<QueuedCommand>> entry = players.next();
+            if (Bukkit.getPlayer(entry.getKey()) != null) {
+                continue;
+            }
+            List<QueuedCommand> commands = entry.getValue();
+            int before = commands.size();
+            commands.removeIf(queued -> queued.queuedAt() < limit);
+            int purged = before - commands.size();
+            if (purged > 0) {
+                purgedTotal += purged;
+                String name = Bukkit.getOfflinePlayer(entry.getKey()).getName();
+                getLogger().info(purged + " commande(s) en file depuis plus de " + days + " jours purgée(s) pour "
+                    + (name != null ? name : entry.getKey().toString()));
+            }
+            if (commands.isEmpty()) {
+                players.remove();
+            }
+        }
+
+        if (purgedTotal > 0) {
+            saveQueuedCommandsToFile();
+        }
+        return purgedTotal;
     }
 
     private void setupQueuedCommandsFile() {
@@ -153,14 +211,38 @@ public class SHQueueCommands extends JavaPlugin {
 
     private void loadQueuedCommandsFromFile() {
         queuedCommands.clear();
+        long now = System.currentTimeMillis();
+        int undated = 0;
         ConfigurationSection commandsSection = queuedCommandsConfig.getConfigurationSection("commands");
         if (commandsSection != null) {
             for (String uuidString : commandsSection.getKeys(false)) {
                 try {
                     UUID uuid = UUID.fromString(uuidString);
-                    List<String> commands = commandsSection.getStringList(uuidString); // Changé pour correspondre à la sauvegarde
+                    List<QueuedCommand> commands = new ArrayList<>();
+                    List<?> raw = commandsSection.getList(uuidString);
+                    if (raw != null) {
+                        for (Object element : raw) {
+                            if (element instanceof Map<?, ?> map) {
+                                Object command = map.get("command");
+                                if (command == null) {
+                                    continue;
+                                }
+                                Object queuedAt = map.get("queued-at");
+                                if (queuedAt instanceof Number number) {
+                                    commands.add(new QueuedCommand(command.toString(), number.longValue()));
+                                } else {
+                                    commands.add(new QueuedCommand(command.toString(), now));
+                                    undated++;
+                                }
+                            } else if (element != null) {
+                                // Ancien format : simple chaîne sans date, le délai de purge démarre au chargement
+                                commands.add(new QueuedCommand(element.toString(), now));
+                                undated++;
+                            }
+                        }
+                    }
                     if (!commands.isEmpty()) {
-                        queuedCommands.put(uuid, new ArrayList<>(commands));
+                        queuedCommands.put(uuid, commands);
                     }
                 } catch (IllegalArgumentException e) {
                     getLogger().warning("UUID invalide trouvé dans queued_commands.yml: " + uuidString);
@@ -168,6 +250,11 @@ public class SHQueueCommands extends JavaPlugin {
             }
         }
         getLogger().info(queuedCommands.values().stream().mapToInt(List::size).sum() + " commande(s) en attente chargées pour " + queuedCommands.size() + " joueur(s).");
+        if (undated > 0) {
+            // Écrit tout de suite les dates : sans cela, un arrêt brutal les ferait repartir de zéro au prochain chargement
+            getLogger().info(undated + " commande(s) sans date : elles sont datées d'aujourd'hui pour la purge.");
+            saveQueuedCommandsToFile();
+        }
     }
 
     public void saveQueuedCommandsToFile() {
@@ -175,9 +262,16 @@ public class SHQueueCommands extends JavaPlugin {
         FileConfiguration newConfig = new YamlConfiguration();
         ConfigurationSection commandsSection = newConfig.createSection("commands");
 
-        for (Map.Entry<UUID, List<String>> entry : queuedCommands.entrySet()) {
+        for (Map.Entry<UUID, List<QueuedCommand>> entry : queuedCommands.entrySet()) {
             if (entry.getValue() != null && !entry.getValue().isEmpty()) {
-                commandsSection.set(entry.getKey().toString(), new ArrayList<>(entry.getValue()));
+                List<Map<String, Object>> serialized = new ArrayList<>();
+                for (QueuedCommand queued : new ArrayList<>(entry.getValue())) {
+                    Map<String, Object> fields = new LinkedHashMap<>();
+                    fields.put("command", queued.command());
+                    fields.put("queued-at", queued.queuedAt());
+                    serialized.add(fields);
+                }
+                commandsSection.set(entry.getKey().toString(), serialized);
             }
         }
 

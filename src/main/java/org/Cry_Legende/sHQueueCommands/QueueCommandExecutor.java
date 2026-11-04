@@ -37,6 +37,7 @@ public class QueueCommandExecutor implements CommandExecutor, TabCompleter {
                     try {
                         // Recharge config.yml, messages.yml et le préfixe mis en cache
                         plugin.loadConfigValues();
+                        plugin.purgeExpiredCommands(); // Applique tout de suite un délai de purge modifié
                         plugin.sendMessage(sender, plugin.getMessage("config-reloaded"));
                     } catch (Exception e) {
                         plugin.sendMessage(sender, plugin.getMessage("config-reload-error"));

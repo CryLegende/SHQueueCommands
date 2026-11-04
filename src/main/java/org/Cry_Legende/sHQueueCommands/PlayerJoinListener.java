@@ -23,7 +23,7 @@ public class PlayerJoinListener implements Listener {
 
         // Les commandes restent dans la file jusqu'à leur exécution : si le joueur repart pendant le délai
         // ou si le serveur s'arrête, elles sont conservées dans queued_commands.yml au lieu d'être perdues.
-        List<String> pending = plugin.getQueuedCommandsMap().get(playerUUID);
+        List<QueuedCommand> pending = plugin.getQueuedCommandsMap().get(playerUUID);
         if (pending == null || pending.isEmpty()) {
             return;
         }

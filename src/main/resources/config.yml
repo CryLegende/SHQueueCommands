@@ -1,6 +1,7 @@
 # SHQueueCommands
 #
 # Met en file d'attente les commandes destinées aux joueurs hors ligne : elles sont exécutées en console à leur prochaine connexion.
+# Les commandes qui attendent depuis trop longtemps sont purgées de la file (voir purge-after-days).
 #
 # Commandes (alias /qc, /shqc, /shqueuecommand) :
 #   /queuecommand queue <Joueur> <Commande ...>   Exécute la commande tout de suite si le joueur est en ligne, sinon la met en file.
@@ -13,3 +14,7 @@
 # Délai en ticks entre la connexion d'un joueur et l'exécution de ses commandes en file (20 ticks = 1 seconde).
 # 0 exécute instantanément, déconseillé si d'autres plugins modifient les données du joueur à la connexion.
 execution-delay-ticks: 100
+
+# Nombre de jours pendant lesquels une commande reste en file avant d'être supprimée sans être exécutée.
+# La purge s'exécute au démarrage, toutes les heures et à /queuecommand reload. 0 la désactive.
+purge-after-days: 90

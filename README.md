@@ -16,6 +16,8 @@
 
 Met en file d'attente les commandes pour les joueurs hors ligne.
 
+Les commandes en file depuis plus de `purge-after-days` jours (90 par défaut) sont supprimées sans être exécutées. La purge tourne au démarrage, toutes les heures et à `/qc reload`.
+
 Utilisé sur : **Opale**.
 
 ## Commandes
