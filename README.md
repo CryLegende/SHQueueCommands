@@ -28,7 +28,8 @@ Utilisé sur : **Opale**.
 
 | Permission | Description | Par défaut |
 |---|---|---|
-| `shqueuecommands.execute` | Permet d'utiliser la commande pour mettre en file d'attente les commandes. | `true` |
+| `shqueuecommands.execute` | Permet d'utiliser la commande pour mettre en file d'attente les commandes. | `op` |
+| `shqueuecommands.reload` | Permet de recharger `config.yml` et `messages.yml` avec `/qc reload`. | `op` |
 
 ## Configuration
 
@@ -36,7 +37,8 @@ Fichiers par défaut repris du serveur (secrets remplacés par `CHANGE_ME`). Cli
 
 <pre>
 plugins/SHQueueCommands/
-└── <a href="src/main/resources/config.yml">config.yml</a>
+├── <a href="src/main/resources/config.yml">config.yml</a>
+└── <a href="src/main/resources/messages.yml">messages.yml</a>
 </pre>
 
 ## Compilation

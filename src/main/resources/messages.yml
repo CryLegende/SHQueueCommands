@@ -1,0 +1,15 @@
+# Messages de SHQueueCommands. Codes couleur avec '&'. Un message vide est désactivé.
+# Variables : %player% (nom du joueur), %command% (commande), %count% (nombre de commandes exécutées).
+
+prefix: "&8[&6SHQC&8] &r"
+command-queued: "&7La commande pour &e%player% &7a été mise en file d'attente : &f/%command%"
+command-executed-immediately: "&7La commande pour &e%player% &7a été exécutée directement : &f/%command%"
+player-not-found: "&cLe joueur &e%player% &cn'a pas été trouvé ou ne s'est jamais connecté."
+no-permission: "&cVous n'avez pas la permission d'utiliser cette commande."
+invalid-usage: "&cUsage incorrect. Utilisez : /qc queue <Joueur> <Commande>"
+config-reloaded: "&7Configuration rechargée."
+config-reload-error: "&cErreur lors du rechargement de la configuration."
+
+# Envoyé au joueur après l'exécution de ses commandes en attente, par exemple :
+# "&7%count% commande(s) en attente ont été exécutées pour vous."
+commands-executed-on-join: ""

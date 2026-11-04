@@ -25,6 +25,7 @@ public class SHQueueCommands extends JavaPlugin {
     private final Map<UUID, List<String>> queuedCommands = new ConcurrentHashMap<>();
     private File queuedCommandsFile;
     private FileConfiguration queuedCommandsConfig;
+    private FileConfiguration messages;
     private String prefix = ""; // Stocke le préfixe une fois chargé
 
     // Sauvegardes : chaque instantané est numéroté pour qu'une écriture asynchrone plus ancienne n'écrase jamais une plus récente
@@ -55,30 +56,34 @@ public class SHQueueCommands extends JavaPlugin {
         getLogger().info("SHQueueCommands a été désactivé !");
     }
 
-    // Méthode pour recharger les valeurs de configuration mises en cache
+    // Recharge config.yml et messages.yml depuis le disque
     public void loadConfigValues() {
-        reloadConfig(); // Assure que la config est la plus récente du disque
-        this.prefix = ChatColor.translateAlternateColorCodes('&', getConfig().getString("messages.prefix", "&8[&6SHQC&8] &r"));
-        // Tu pourrais charger d'autres valeurs ici si nécessaire
+        reloadConfig();
+        File messagesFile = new File(getDataFolder(), "messages.yml");
+        if (!messagesFile.exists()) {
+            saveResource("messages.yml", false);
+        }
+        this.messages = YamlConfiguration.loadConfiguration(messagesFile);
+        this.prefix = ChatColor.translateAlternateColorCodes('&', messages.getString("prefix", "&8[&6SHQC&8] &r"));
     }
 
 
     /**
-     * Obtient un message formaté depuis la configuration.
+     * Obtient un message formaté depuis messages.yml.
      * Si le message configuré (sans le préfixe) est vide ou ne contient que des espaces,
      * une chaîne vide est retournée, ce qui n'enverra rien via sender.sendMessage("").
      *
-     * @param key          La clé du message dans la section 'messages' de config.yml.
+     * @param key          La clé du message dans messages.yml.
      * @param replacements Les paires de remplacement (ex: "%player%", playerName).
      * @return Le message formaté, ou une chaîne vide si le message est configuré comme vide.
      */
     public String getMessage(String key, String... replacements) {
-        String messageContent = getConfig().getString("messages." + key);
+        String messageContent = messages.getString(key);
 
         if (messageContent == null) {
-            // Le message n'existe pas du tout dans la config, on utilise un message d'erreur par défaut
+            // Le message n'existe pas du tout dans messages.yml, on utilise un message d'erreur par défaut
             // et on ajoute le préfixe car c'est un message d'erreur du plugin.
-            messageContent = "&cMessage non trouvé dans config.yml: messages." + key;
+            messageContent = "&cMessage non trouvé dans messages.yml: " + key;
             // Appliquer les remplacements même pour le message d'erreur par défaut
             for (int i = 0; i < replacements.length; i += 2) {
                 if (i + 1 < replacements.length) {
@@ -209,13 +214,20 @@ public class SHQueueCommands extends JavaPlugin {
         }
     }
 
-    @SuppressWarnings("deprecation")
+    /**
+     * Résout un joueur par son nom sans requête réseau. Le réseau identifie les joueurs par leur UUID hors ligne
+     * (md5 de "OfflinePlayer:<nom>") : Bukkit.getOfflinePlayer(String) interroge Mojang sur le thread principal
+     * et renvoie l'UUID premium des comptes originaux.
+     */
     public OfflinePlayer getOfflinePlayerByName(String playerName) {
         Player onlinePlayer = Bukkit.getPlayerExact(playerName);
         if (onlinePlayer != null) {
             return onlinePlayer;
         }
-        return Bukkit.getOfflinePlayer(playerName);
+        // Le cache de noms rétablit la casse exacte, qui change l'UUID hors ligne
+        OfflinePlayer cached = Bukkit.getOfflinePlayerIfCached(playerName);
+        String exactName = cached != null && cached.getName() != null ? cached.getName() : playerName;
+        return Bukkit.getOfflinePlayer(UUID.nameUUIDFromBytes(("OfflinePlayer:" + exactName).getBytes(StandardCharsets.UTF_8)));
     }
 
     public void executeCommandAsConsole(String command, Player playerContext) {

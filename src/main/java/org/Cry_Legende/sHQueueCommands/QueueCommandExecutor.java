@@ -35,11 +35,11 @@ public class QueueCommandExecutor implements CommandExecutor, TabCompleter {
                 if (sender.hasPermission("shqueuecommands.reload")) { // Permission distincte pour reload
                     plugin.saveDefaultConfig(); // S'assure que les nouvelles options sont là
                     try {
-                        // Recharge config.yml et le préfixe mis en cache
+                        // Recharge config.yml, messages.yml et le préfixe mis en cache
                         plugin.loadConfigValues();
-                        sender.sendMessage(plugin.getMessage("prefix") + "Configuration rechargée.");
+                        plugin.sendMessage(sender, plugin.getMessage("config-reloaded"));
                     } catch (Exception e) {
-                        sender.sendMessage(plugin.getMessage("prefix") + "§cErreur lors du rechargement de la configuration.");
+                        plugin.sendMessage(sender, plugin.getMessage("config-reload-error"));
                         plugin.getLogger().severe("Erreur lors du rechargement de la configuration: " + e.getMessage());
                     }
                     return true;
@@ -72,7 +72,7 @@ public class QueueCommandExecutor implements CommandExecutor, TabCompleter {
             if (targetOfflinePlayer != null && (targetOfflinePlayer.hasPlayedBefore() || targetOfflinePlayer.isOnline())) {
                 UUID playerUUID = targetOfflinePlayer.getUniqueId();
                 plugin.addCommandToQueue(playerUUID, commandToExecute);
-                plugin.sendMessage(sender, plugin.getMessage("command-queued", "%player%", String.valueOf(targetOfflinePlayer.getName()), "%command%", commandToExecute));
+                plugin.sendMessage(sender, plugin.getMessage("command-queued", "%player%", targetOfflinePlayer.getName() != null ? targetOfflinePlayer.getName() : playerName, "%command%", commandToExecute));
                 plugin.saveQueuedCommandsToFile();
             } else {
                 plugin.sendMessage(sender, plugin.getMessage("player-not-found", "%player%", playerName));
