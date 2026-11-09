@@ -36,6 +36,8 @@ public class SHQueueCommands extends JavaPlugin {
     private final Object saveLock = new Object();
     private final AtomicLong saveCounter = new AtomicLong();
     private long lastWrittenVersion = 0L;
+    // Vrai entre une demande de sauvegarde et le tick qui l'exécute (lu et écrit sur le thread principal)
+    private boolean saveScheduled = false;
 
     @Override
     public void onEnable() {
@@ -257,33 +259,61 @@ public class SHQueueCommands extends JavaPlugin {
         }
     }
 
+    /**
+     * Demande une sauvegarde de la file. Les demandes d'un même tick (un vote envoie plusieurs commandes d'un coup)
+     * sont regroupées en une seule sauvegarde au tick suivant. Seule la copie de la file se fait sur le thread
+     * principal : la conversion en YAML et l'écriture du fichier se font en asynchrone.
+     */
     public void saveQueuedCommandsToFile() {
-        // Instantané construit sur le thread appelant (cohérent avec la file en mémoire)
-        FileConfiguration newConfig = new YamlConfiguration();
-        ConfigurationSection commandsSection = newConfig.createSection("commands");
+        if (!isEnabled()) {
+            saveQueuedCommandsNow();
+            return;
+        }
+        if (saveScheduled) {
+            return;
+        }
+        saveScheduled = true;
+        getServer().getScheduler().runTask(this, () -> {
+            saveScheduled = false;
+            final Map<UUID, List<QueuedCommand>> snapshot = snapshotQueue();
+            final long version = saveCounter.incrementAndGet();
+            getServer().getScheduler().runTaskAsynchronously(this, () -> writeQueuedCommands(toYaml(snapshot), version));
+        });
+    }
 
+    /**
+     * Sauvegarde immédiate et synchrone, utilisée à l'arrêt du plugin quand le scheduler n'accepte plus de tâche.
+     */
+    private void saveQueuedCommandsNow() {
+        saveScheduled = false;
+        writeQueuedCommands(toYaml(snapshotQueue()), saveCounter.incrementAndGet());
+    }
+
+    // Copie de la file sur le thread principal : les listes ne sont modifiées que depuis ce thread
+    private Map<UUID, List<QueuedCommand>> snapshotQueue() {
+        Map<UUID, List<QueuedCommand>> snapshot = new LinkedHashMap<>();
         for (Map.Entry<UUID, List<QueuedCommand>> entry : queuedCommands.entrySet()) {
             if (entry.getValue() != null && !entry.getValue().isEmpty()) {
-                List<Map<String, Object>> serialized = new ArrayList<>();
-                for (QueuedCommand queued : new ArrayList<>(entry.getValue())) {
-                    Map<String, Object> fields = new LinkedHashMap<>();
-                    fields.put("command", queued.command());
-                    fields.put("queued-at", queued.queuedAt());
-                    serialized.add(fields);
-                }
-                commandsSection.set(entry.getKey().toString(), serialized);
+                snapshot.put(entry.getKey(), List.copyOf(entry.getValue()));
             }
         }
+        return snapshot;
+    }
 
-        final String data = newConfig.saveToString();
-        final long version = saveCounter.incrementAndGet();
-
-        // Écriture hors du thread principal ; à l'arrêt du plugin le scheduler n'accepte plus de tâche, on écrit directement
-        if (isEnabled()) {
-            getServer().getScheduler().runTaskAsynchronously(this, () -> writeQueuedCommands(data, version));
-        } else {
-            writeQueuedCommands(data, version);
+    private static String toYaml(Map<UUID, List<QueuedCommand>> snapshot) {
+        FileConfiguration newConfig = new YamlConfiguration();
+        ConfigurationSection commandsSection = newConfig.createSection("commands");
+        for (Map.Entry<UUID, List<QueuedCommand>> entry : snapshot.entrySet()) {
+            List<Map<String, Object>> serialized = new ArrayList<>(entry.getValue().size());
+            for (QueuedCommand queued : entry.getValue()) {
+                Map<String, Object> fields = new LinkedHashMap<>();
+                fields.put("command", queued.command());
+                fields.put("queued-at", queued.queuedAt());
+                serialized.add(fields);
+            }
+            commandsSection.set(entry.getKey().toString(), serialized);
         }
+        return newConfig.saveToString();
     }
 
     private void writeQueuedCommands(String data, long version) {
