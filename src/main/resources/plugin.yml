@@ -4,6 +4,9 @@ main: org.Cry_Legende.sHQueueCommands.SHQueueCommands
 api-version: '1.20'
 author: Cry_Legende
 description: Met en file d'attente les commandes pour les joueurs hors ligne.
+# Démarre avant l'ancien QueueCommands (2019, gardé pour livrer ses vieilles files) : le premier plugin activé
+# prend l'alias /qc, utilisé par VoteParty, SHHypeVotes et CombatLogX (« qc queue ... »).
+loadbefore: [QueueCommands]
 
 commands:
   queuecommand:
