@@ -20,6 +20,11 @@ public class PlayerJoinListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         UUID playerUUID = event.getPlayer().getUniqueId();
+        if (plugin.network() != null) {
+            // Mode réseau : file commune, réclamée par le serveur où le joueur arrive
+            plugin.network().joined(event.getPlayer());
+            return;
+        }
 
         // Les commandes restent dans la file jusqu'à leur exécution : si le joueur repart pendant le délai
         // ou si le serveur s'arrête, elles sont conservées dans queued_commands.yml au lieu d'être perdues.

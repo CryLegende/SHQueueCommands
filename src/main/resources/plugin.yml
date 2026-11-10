@@ -4,6 +4,12 @@ main: org.Cry_Legende.sHQueueCommands.SHQueueCommands
 api-version: '1.20'
 author: Cry_Legende
 description: Met en file d'attente les commandes pour les joueurs hors ligne.
+# SHNetwork est facultatif : sans lui, la file reste celle de ce serveur (queued_commands.yml).
+softdepend: [SHNetwork]
+# Chargées par Paper dans le classloader du plugin : seul le mode réseau (file en MariaDB) s'en sert.
+libraries:
+  - com.zaxxer:HikariCP:5.1.0
+  - org.mariadb.jdbc:mariadb-java-client:3.4.1
 
 commands:
   queuecommand:

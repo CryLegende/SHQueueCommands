@@ -20,6 +20,16 @@ Les commandes en file depuis plus de `purge-after-days` jours (90 par défaut) s
 
 Utilisé sur : **Opale**.
 
+## Mode réseau (plusieurs Opale)
+
+Avec **SHNetwork** chargé et `reseau.actif: true` (par défaut), une seule file sert tous les serveurs. Sans SHNetwork, rien ne change (`queued_commands.yml`).
+
+- **Joueur connecté sur ce serveur** : la commande s'exécute tout de suite, comme avant.
+- **Joueur connecté sur un autre serveur** : la commande y est exécutée tout de suite (`runFor` de SHNetwork), `%player%` et `%uuid%` déjà remplacés.
+- **Joueur hors ligne** : la commande part dans la file commune (MariaDB, table `shqc_queue`) s'il est déjà venu sur le réseau (en ligne, connu de ce serveur, ou présent dans la table des premières connexions de SHPlayerTrack, `reseau.table-premieres-connexions`). À sa connexion, sur n'importe quel serveur, ce serveur réclame ses commandes après `execution-delay-ticks` (UPDATE conditionnel : un seul serveur les obtient), les exécute puis les retire. Un joueur reparti avant l'exécution retrouve ses commandes à sa prochaine connexion.
+- **Purge** et contrôle des réclamations restées sans suite (serveur arrêté pendant l'exécution, signalées une fois dans la console pour une vérification à la main, jamais relancées d'office) : sur un seul serveur (`leader` SHNetwork, tâche `shqueuecommands`).
+- **Reprise** : au premier démarrage en mode réseau, `queued_commands.yml` est repris une seule fois pour tout le réseau (dates gardées), puis chaque serveur renomme le sien en `queued_commands.yml.avant-reseau`. Base injoignable : le plugin se désactive au lieu de retomber sur le fichier local.
+
 ## Commandes
 
 | Commande | Alias | Description | Permission |
@@ -51,7 +61,7 @@ Java 25 et Maven :
 mvn clean package
 ```
 
-Le jar est généré dans `target/`.
+Le jar est généré dans `target/`. Les tests de la file commune (chaque commande réclamée par un seul serveur, reprise unique de la file, purge) tournent sur une vraie base MariaDB jetable : `SHQC_TEST_URL`, `SHQC_TEST_USER`, `SHQC_TEST_PASSWORD` ; sans elles ils sont ignorés.
 
 ---
 

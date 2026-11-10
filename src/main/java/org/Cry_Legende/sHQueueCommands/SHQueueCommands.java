@@ -1,5 +1,7 @@
 package org.Cry_Legende.sHQueueCommands;
 
+import org.Cry_Legende.sHQueueCommands.network.NetBus;
+import org.Cry_Legende.sHQueueCommands.network.ShNetworkBus;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
@@ -12,6 +14,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -19,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 public class SHQueueCommands extends JavaPlugin {
@@ -38,6 +43,8 @@ public class SHQueueCommands extends JavaPlugin {
     private long lastWrittenVersion = 0L;
     // Vrai entre une demande de sauvegarde et le tick qui l'exécute (lu et écrit sur le thread principal)
     private boolean saveScheduled = false;
+    // Mode réseau (SHNetwork présent) : file commune en MariaDB ; null sur un serveur seul
+    private NetworkQueue network;
 
     @Override
     public void onEnable() {
@@ -47,23 +54,105 @@ public class SHQueueCommands extends JavaPlugin {
         setupQueuedCommandsFile();
         loadQueuedCommandsFromFile();
 
+        if (networkWanted()) {
+            // Sur le réseau, la file ne retombe jamais sur queued_commands.yml : sur un serveur copié d'un autre, ce fichier
+            // contient des commandes déjà données ailleurs.
+            if (!enableNetwork()) {
+                getServer().getPluginManager().disablePlugin(this);
+                return;
+            }
+            registerCommandsAndListeners();
+            getLogger().info("SHQueueCommands a été activé !");
+            return;
+        }
+
         // Purge au démarrage puis toutes les heures : un serveur qui ne redémarre presque jamais doit purger aussi
         purgeExpiredCommands();
         getServer().getScheduler().runTaskTimer(this, this::purgeExpiredCommands, PURGE_INTERVAL_TICKS, PURGE_INTERVAL_TICKS);
 
+        registerCommandsAndListeners();
+
+        getLogger().info("SHQueueCommands a été activé !");
+    }
+
+    private void registerCommandsAndListeners() {
         QueueCommandExecutor commandExecutor = new QueueCommandExecutor(this);
         getCommand("queuecommand").setExecutor(commandExecutor);
         getCommand("queuecommand").setTabCompleter(commandExecutor);
 
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
-
-        getLogger().info("SHQueueCommands a été activé !");
     }
 
     @Override
     public void onDisable() {
+        if (network != null) {
+            network.disable();
+            network = null;
+            getLogger().info("SHQueueCommands a été désactivé !");
+            return;
+        }
         saveQueuedCommandsToFile();
         getLogger().info("SHQueueCommands a été désactivé !");
+    }
+
+    /** Mode réseau voulu : SHNetwork chargé et reseau.actif vrai (par défaut). */
+    private boolean networkWanted() {
+        return getConfig().getBoolean("reseau.actif", true) && getServer().getPluginManager().isPluginEnabled("SHNetwork");
+    }
+
+    /**
+     * Mode réseau : file commune en MariaDB. La file queued_commands.yml de ce serveur y est reprise une seule fois
+     * pour tout le réseau (premier serveur démarré), puis chaque serveur met la sienne de côté.
+     */
+    private boolean enableNetwork() {
+        QueueStore store = null;
+        try {
+            NetBus bus = ShNetworkBus.open();
+            store = new QueueStore(getConfig().getString("reseau.base-de-donnees.url", ""),
+                getConfig().getString("reseau.base-de-donnees.utilisateur", ""),
+                getConfig().getString("reseau.base-de-donnees.mot-de-passe", ""),
+                Math.max(500, getConfig().getInt("reseau.base-de-donnees.delai-ms", 3000)));
+            store.createTables();
+            int imported = store.importOnce(snapshotQueue(), bus.serverName());
+            if (imported >= 0) {
+                getLogger().info("File queued_commands.yml reprise dans la file commune : " + imported + " commande(s).");
+            }
+            retireYaml();
+            queuedCommands.clear();
+            NetworkQueue queue = new NetworkQueue(this, bus, store, getConfig().getString("reseau.canal", "shqueuecommands"),
+                getConfig().getString("reseau.table-premieres-connexions", "Global.sh_track_firstseen"));
+            queue.enable();
+            this.network = queue;
+            getLogger().info("SHNetwork détecté : file commune à tout le réseau (MariaDB).");
+            return true;
+        } catch (Exception | LinkageError e) {
+            if (store != null) {
+                store.close();
+            }
+            getLogger().log(Level.SEVERE, "Mode réseau impossible (SHNetwork ou base injoignable) : SHQueueCommands désactivé sur ce serveur.", e);
+            return false;
+        }
+    }
+
+    /** queued_commands.yml mis de côté une fois la file commune en place : il ne sera plus jamais relu. */
+    private void retireYaml() {
+        if (queuedCommandsFile == null || !queuedCommandsFile.isFile()) {
+            return;
+        }
+        File target = new File(queuedCommandsFile.getParentFile(), queuedCommandsFile.getName() + ".avant-reseau");
+        if (target.exists()) {
+            target = new File(queuedCommandsFile.getParentFile(), queuedCommandsFile.getName() + ".avant-reseau-" + System.currentTimeMillis());
+        }
+        if (queuedCommandsFile.renameTo(target)) {
+            getLogger().info("queued_commands.yml mis de côté : " + target.getName());
+        } else {
+            getLogger().warning("queued_commands.yml non renommé : à mettre de côté à la main avant tout retour sans SHNetwork.");
+        }
+    }
+
+    /** Mode réseau, ou null sur un serveur seul. */
+    NetworkQueue network() {
+        return network;
     }
 
     // Recharge config.yml et messages.yml depuis le disque
@@ -74,6 +163,14 @@ public class SHQueueCommands extends JavaPlugin {
             saveResource("messages.yml", false);
         }
         this.messages = YamlConfiguration.loadConfiguration(messagesFile);
+        // Messages du jar par défaut : une clé ajoutée par une nouvelle version existe sans toucher au fichier du serveur
+        try (InputStream bundled = getResource("messages.yml")) {
+            if (bundled != null) {
+                this.messages.setDefaults(YamlConfiguration.loadConfiguration(new InputStreamReader(bundled, StandardCharsets.UTF_8)));
+            }
+        } catch (IOException ignored) {
+            // messages du fichier seuls
+        }
         this.prefix = ChatColor.translateAlternateColorCodes('&', messages.getString("prefix", "&8[&6SHQC&8] &r"));
     }
 
@@ -265,6 +362,9 @@ public class SHQueueCommands extends JavaPlugin {
      * principal : la conversion en YAML et l'écriture du fichier se font en asynchrone.
      */
     public void saveQueuedCommandsToFile() {
+        if (network != null) {
+            return; // mode réseau : la file est en base, queued_commands.yml n'est plus écrit
+        }
         if (!isEnabled()) {
             saveQueuedCommandsNow();
             return;
@@ -275,6 +375,9 @@ public class SHQueueCommands extends JavaPlugin {
         saveScheduled = true;
         getServer().getScheduler().runTask(this, () -> {
             saveScheduled = false;
+            if (network != null) {
+                return;
+            }
             final Map<UUID, List<QueuedCommand>> snapshot = snapshotQueue();
             final long version = saveCounter.incrementAndGet();
             getServer().getScheduler().runTaskAsynchronously(this, () -> writeQueuedCommands(toYaml(snapshot), version));

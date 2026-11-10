@@ -67,6 +67,9 @@ public class QueueCommandExecutor implements CommandExecutor, TabCompleter {
             // Le joueur est en ligne, exécuter la commande directement
             plugin.executeCommandAsConsole(commandToExecute, targetOnlinePlayer);
             plugin.sendMessage(sender, plugin.getMessage("command-executed-immediately", "%player%", targetOnlinePlayer.getName(), "%command%", commandToExecute));
+        } else if (plugin.network() != null) {
+            // Mode réseau : envoyée sur le serveur du joueur, ou mise dans la file commune
+            plugin.network().queue(sender, playerName, commandToExecute);
         } else {
             // Le joueur est hors ligne ou n'existe pas, chercher son UUID
             OfflinePlayer targetOfflinePlayer = plugin.getOfflinePlayerByName(playerName);

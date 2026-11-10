@@ -18,3 +18,24 @@ execution-delay-ticks: 100
 # Nombre de jours pendant lesquels une commande reste en file avant d'être supprimée sans être exécutée.
 # La purge s'exécute au démarrage, toutes les heures et à /queuecommand reload. 0 la désactive.
 purge-after-days: 90
+
+# Mode réseau : avec SHNetwork, une seule file pour tous les serveurs, en MariaDB (table shqc_queue).
+# Joueur connecté sur un autre serveur : la commande y est exécutée tout de suite. Joueur hors ligne : la commande
+# attend dans la file commune et part, une seule fois, sur le serveur où il se connecte. La purge ne tourne que sur
+# un serveur. Au premier démarrage en mode réseau, queued_commands.yml de ce serveur est repris une fois pour tout
+# le réseau ; chaque serveur renomme ensuite le sien en queued_commands.yml.avant-reseau.
+# Si la base est injoignable, le plugin se désactive sur ce serveur (jamais de retour au fichier local).
+# Sans SHNetwork, cette section ne sert pas.
+reseau:
+  actif: true
+  # Canal du bus SHNetwork : prévient le serveur d'un joueur qu'une commande vient d'arriver pour lui
+  canal: shqueuecommands
+  # Table des premières connexions (SHPlayerTrack) : un joueur jamais venu sur ce serveur y est cherché avant
+  # d'être déclaré introuvable. Vide pour ne pas la consulter.
+  table-premieres-connexions: "Global.sh_track_firstseen"
+  base-de-donnees:
+    url: "jdbc:mariadb://127.0.0.1:3306/bo_net"
+    utilisateur: shqueuecommands
+    mot-de-passe: CHANGE_ME
+    # Délai maximal de connexion et de réponse de la base, en millisecondes
+    delai-ms: 3000

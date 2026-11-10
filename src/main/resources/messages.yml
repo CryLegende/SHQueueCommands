@@ -5,6 +5,10 @@ prefix: "&8[&6SHQC&8] &r"
 command-queued: "&7La commande pour &e%player% &7a été mise en file d'attente : &f/%command%"
 command-executed-immediately: "&7La commande pour &e%player% &7a été exécutée directement : &f/%command%"
 player-not-found: "&cLe joueur &e%player% &cn'a pas été trouvé ou ne s'est jamais connecté."
+# Mode réseau : joueur connecté sur un autre serveur (%server%), la commande y est exécutée
+command-sent-to-server: "&7La commande pour &e%player% &7est envoyée sur &e%server% &7: &f/%command%"
+# Mode réseau : la file commune n'a pas répondu, la commande n'a pas été gardée
+queue-error: "&cLa commande pour &e%player% &cn'a pas pu être mise en file : &f/%command%"
 no-permission: "&cVous n'avez pas la permission d'utiliser cette commande."
 invalid-usage: "&cUsage incorrect. Utilisez : /qc queue <Joueur> <Commande>"
 config-reloaded: "&7Configuration rechargée."
