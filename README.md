@@ -16,7 +16,7 @@
 
 Met en file d'attente les commandes pour les joueurs hors ligne.
 
-Les commandes en file depuis plus de `purge-after-days` jours (90 par défaut) sont supprimées sans être exécutées. La purge tourne au démarrage, toutes les heures et à `/qc reload`.
+Les commandes en file depuis plus de `purge-after-days` jours (90 par défaut) sont supprimées sans être exécutées. La purge tourne au démarrage, toutes les heures et à `/shqueuecommands reload`.
 
 Utilisé sur : **Opale**.
 
@@ -34,14 +34,22 @@ Avec **SHNetwork** chargé et `reseau.actif: true` (par défaut), une seule file
 
 | Commande | Alias | Description | Permission |
 |---|---|---|---|
-| `/queuecommand` | `/qc`, `/shqc`, `/shqueuecommand` | Met en file d'attente une commande pour un joueur ou l'exécute directement. | `shqueuecommands.execute` |
+| `/shqueuecommands queue <joueur> <commande>` | `/queuecommand`, `/qc`, `/shqc`, `/shqueuecommand` | Exécute la commande tout de suite si le joueur est en ligne, sinon la met en file. | `shqueuecommands.execute` |
+| `/shqueuecommands reload` | idem | Recharge `config.yml` et `messages.yml`, puis purge la file. Un fichier illisible annule le rechargement : l'ancienne configuration reste active et le fichier fautif est indiqué. La section `reseau` n'est lue qu'au démarrage. | `shqueuecommands.admin.reload` |
+| `/shqueuecommands list [joueur]` | idem | Commandes en attente : le total et les files les plus longues, ou celles d'un joueur. Pas disponible en mode réseau. | `shqueuecommands.admin.list` |
+| `/shqueuecommands clear <joueur>` | idem | Retire les commandes en attente d'un joueur. Pas disponible en mode réseau. | `shqueuecommands.admin.clear` |
+
+`/qc` est pris par ce plugin parce qu'il démarre avant l'ancien QueueCommands (`loadbefore`).
 
 ## Permissions
 
 | Permission | Description | Par défaut |
 |---|---|---|
 | `shqueuecommands.execute` | Permet d'utiliser la commande pour mettre en file d'attente les commandes. | `op` |
-| `shqueuecommands.reload` | Permet de recharger `config.yml` et `messages.yml` avec `/qc reload`. | `op` |
+| `shqueuecommands.admin` | Reload, list et clear (parent des trois suivantes, ne contient pas `shqueuecommands.execute`). | `op` |
+| `shqueuecommands.admin.reload` | Recharger `config.yml` et `messages.yml`. | `op` |
+| `shqueuecommands.admin.list` | Consulter les commandes en attente. | `op` |
+| `shqueuecommands.admin.clear` | Retirer les commandes en attente d'un joueur. | `op` |
 
 ## Configuration
 

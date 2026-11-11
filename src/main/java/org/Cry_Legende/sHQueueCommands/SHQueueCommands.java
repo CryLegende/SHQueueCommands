@@ -14,8 +14,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -36,6 +34,8 @@ public class SHQueueCommands extends JavaPlugin {
     private FileConfiguration queuedCommandsConfig;
     private FileConfiguration messages;
     private String prefix = ""; // Stocke le préfixe une fois chargé
+    // Section reseau au démarrage, pour signaler un reload qui change ce qui demande un redémarrage
+    private Map<String, Object> networkSettings = Map.of();
 
     // Sauvegardes : chaque instantané est numéroté pour qu'une écriture asynchrone plus ancienne n'écrase jamais une plus récente
     private final Object saveLock = new Object();
@@ -77,8 +77,8 @@ public class SHQueueCommands extends JavaPlugin {
 
     private void registerCommandsAndListeners() {
         QueueCommandExecutor commandExecutor = new QueueCommandExecutor(this);
-        getCommand("queuecommand").setExecutor(commandExecutor);
-        getCommand("queuecommand").setTabCompleter(commandExecutor);
+        getCommand("shqueuecommands").setExecutor(commandExecutor);
+        getCommand("shqueuecommands").setTabCompleter(commandExecutor);
 
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
     }
@@ -155,23 +155,52 @@ public class SHQueueCommands extends JavaPlugin {
         return network;
     }
 
-    // Recharge config.yml et messages.yml depuis le disque
+    // Lit config.yml et messages.yml au démarrage. Un messages.yml illisible n'empêche pas le démarrage : les textes
+    // du jar servent jusqu'au prochain reload.
     public void loadConfigValues() {
         reloadConfig();
-        File messagesFile = new File(getDataFolder(), "messages.yml");
-        if (!messagesFile.exists()) {
-            saveResource("messages.yml", false);
+        try {
+            applyMessages(ConfigFiles.read(this, "messages.yml"));
+        } catch (ConfigFiles.ReadError e) {
+            getLogger().severe(e.file() + " illisible, textes du jar utilisés : " + e.detail());
+            applyMessages(ConfigFiles.bundled(this, "messages.yml"));
         }
-        this.messages = YamlConfiguration.loadConfiguration(messagesFile);
-        // Messages du jar par défaut : une clé ajoutée par une nouvelle version existe sans toucher au fichier du serveur
-        try (InputStream bundled = getResource("messages.yml")) {
-            if (bundled != null) {
-                this.messages.setDefaults(YamlConfiguration.loadConfiguration(new InputStreamReader(bundled, StandardCharsets.UTF_8)));
-            }
-        } catch (IOException ignored) {
-            // messages du fichier seuls
-        }
+        networkSettings = networkSettingsNow();
+    }
+
+    private void applyMessages(YamlConfiguration loaded) {
+        this.messages = loaded;
         this.prefix = ChatColor.translateAlternateColorCodes('&', messages.getString("prefix", "&8[&6SHQC&8] &r"));
+    }
+
+    // La section reseau (mode, base, canal) n'est lue qu'au démarrage : valeurs prises à ce moment-là
+    private Map<String, Object> networkSettingsNow() {
+        ConfigurationSection section = getConfig().getConfigurationSection("reseau");
+        return section == null ? Map.of() : section.getValues(true);
+    }
+
+    /**
+     * /shqueuecommands reload. config.yml et messages.yml sont lus avant tout remplacement : si l'un est illisible,
+     * l'ancienne configuration reste active. queued_commands.yml et la base ne sont pas touchés.
+     */
+    public void reloadFiles(CommandSender sender) {
+        YamlConfiguration loadedMessages;
+        try {
+            ConfigFiles.read(this, "config.yml");
+            loadedMessages = ConfigFiles.read(this, "messages.yml");
+        } catch (ConfigFiles.ReadError e) {
+            getLogger().severe("Reload annulé, " + e.file() + " illisible : " + e.detail());
+            sendMessage(sender, getMessage("config-reload-error"));
+            sendMessage(sender, getMessage("config-reload-detail", "%file%", e.file(), "%error%", e.detail()));
+            return;
+        }
+        reloadConfig();
+        applyMessages(loadedMessages);
+        purgeExpiredCommands(); // Applique tout de suite un délai de purge modifié
+        sendMessage(sender, getMessage("config-reloaded"));
+        if (!networkSettings.equals(networkSettingsNow())) {
+            sendMessage(sender, getMessage("config-reload-restart"));
+        }
     }
 
 

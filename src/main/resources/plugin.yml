@@ -15,14 +15,31 @@ libraries:
   - org.mariadb.jdbc:mariadb-java-client:3.4.1
 
 commands:
-  queuecommand:
-    description: Met en file d'attente une commande pour un joueur ou l'exécute directement.
-    usage: /<command> queue <Joueur> <Commande ...>
-    aliases: [qc, shqc, shqueuecommand]
-    permission: shqueuecommands.execute
+  shqueuecommands:
+    description: Met en file d'attente une commande pour un joueur ou l'exécute directement, et administre la file.
+    usage: /<command> <queue|reload|list|clear>
+    aliases: [queuecommand, qc, shqc, shqueuecommand]
+    # Une sous-commande se délègue seule : la commande est ouverte à qui a l'un de ces droits
+    permission: shqueuecommands.execute;shqueuecommands.admin.reload;shqueuecommands.admin.list;shqueuecommands.admin.clear
 
 permissions:
   shqueuecommands.execute:
     description: Permet d'utiliser la commande pour mettre en file d'attente les commandes.
     # op : la commande s'exécute en console, un joueur ne doit jamais l'avoir par défaut
+    default: op
+  shqueuecommands.admin:
+    description: Toute l'administration de la file (hors shqueuecommands.execute).
+    default: op
+    children:
+      shqueuecommands.admin.reload: true
+      shqueuecommands.admin.list: true
+      shqueuecommands.admin.clear: true
+  shqueuecommands.admin.reload:
+    description: Recharger config.yml et messages.yml.
+    default: op
+  shqueuecommands.admin.list:
+    description: Consulter les commandes en attente.
+    default: op
+  shqueuecommands.admin.clear:
+    description: Retirer les commandes en attente d'un joueur.
     default: op

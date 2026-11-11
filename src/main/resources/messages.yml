@@ -1,5 +1,7 @@
 # Messages de SHQueueCommands. Codes couleur avec '&'. Un message vide est désactivé.
-# Variables : %player% (nom du joueur), %command% (commande), %count% (nombre de commandes exécutées).
+# Variables : %player% (nom du joueur), %command% (commande), %count% (nombre de commandes), %subcommands% (sous-commandes
+# que l'expéditeur peut utiliser), %file% (fichier illisible), %error% (cause), %age% (ancienneté), %players% (joueurs),
+# %more% (lignes non affichées).
 
 prefix: "&8[&6SHQC&8] &r"
 command-queued: "&7La commande pour &e%player% &7a été mise en file d'attente : &f/%command%"
@@ -10,9 +12,26 @@ command-sent-to-server: "&7La commande pour &e%player% &7est envoyée sur &e%ser
 # Mode réseau : la file commune n'a pas répondu, la commande n'a pas été gardée
 queue-error: "&cLa commande pour &e%player% &cn'a pas pu être mise en file : &f/%command%"
 no-permission: "&cVous n'avez pas la permission d'utiliser cette commande."
-invalid-usage: "&cUsage incorrect. Utilisez : /qc queue <Joueur> <Commande>"
+invalid-usage: "&cUsage incorrect. Utilisez : /shqueuecommands queue <Joueur> <Commande>"
+usage: "&7Utilisation : &e/shqueuecommands <%subcommands%>"
 config-reloaded: "&7Configuration rechargée."
-config-reload-error: "&cErreur lors du rechargement de la configuration."
+config-reload-error: "&cErreur lors du rechargement de la configuration : l'ancienne configuration reste active."
+config-reload-detail: "&f%file% &7: &c%error%"
+# La section reseau n'est lue qu'au démarrage
+config-reload-restart: "&6reseau.* &7a changé : un redémarrage est nécessaire pour qu'il soit pris en compte."
+
+# /shqueuecommands list et clear
+list-empty: "&7Aucune commande en attente."
+list-summary: "&e%count% &7commande(s) en attente pour &e%players% &7joueur(s)."
+list-player: "&8- &e%player% &7: &f%count% &7(la plus ancienne : %age%)"
+list-player-header: "&7Commandes en attente de &e%player% &7(%count%) :"
+list-command: "&8- &f/%command% &7(%age%)"
+list-more: "&7... et &e%more% &7autre(s)."
+list-player-none: "&e%player% &7n'a aucune commande en attente."
+clear-usage: "&cUsage incorrect. Utilisez : /shqueuecommands clear <Joueur>"
+clear-done: "&e%count% &7commande(s) en attente retirée(s) pour &e%player%&7."
+# Mode réseau : la file est commune à tous les serveurs
+network-only-local: "&cNon disponible avec SHNetwork : la file est commune à tout le réseau."
 
 # Envoyé au joueur après l'exécution de ses commandes en attente, par exemple :
 # "&7%count% commande(s) en attente ont été exécutées pour vous."
