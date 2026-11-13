@@ -42,10 +42,10 @@ reseau:
   canal: shqueuecommands
   # Table des premières connexions (SHPlayerTrack) : un joueur jamais venu sur ce serveur y est cherché avant
   # d'être déclaré introuvable. Vide pour ne pas la consulter.
-  table-premieres-connexions: "Global.sh_track_firstseen"
+  table-premieres-connexions: "minecraft.sh_track_firstseen"
   base-de-donnees:
-    url: "jdbc:mariadb://127.0.0.1:3306/bo_net"
-    utilisateur: shqueuecommands
+    url: "jdbc:mariadb://127.0.0.1:3306/minecraft"
+    utilisateur: minecraft
     mot-de-passe: CHANGE_ME
     # Délai maximal de connexion et de réponse de la base, en millisecondes
     delai-ms: 3000
